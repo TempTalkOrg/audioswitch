@@ -18,6 +18,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import androidx.annotation.VisibleForTesting
 import com.twilio.audioswitch.AudioDevice
@@ -46,7 +47,7 @@ internal constructor(
     internal val bluetoothAdapter: BluetoothAdapter,
     audioDeviceManager: AudioDeviceManager,
     var headsetListener: BluetoothHeadsetConnectionListener? = null,
-    bluetoothScoHandler: Handler = Handler(Looper.getMainLooper()),
+    bluetoothScoHandler: Handler = Handler(bluetoothScoThread.looper),
     systemClockWrapper: SystemClockWrapper = SystemClockWrapper(),
     private val bluetoothIntentProcessor: BluetoothIntentProcessor = BluetoothIntentProcessorImpl(),
     private var headsetProxy: BluetoothHeadset? = null,
@@ -77,6 +78,10 @@ internal constructor(
     )
 
     companion object {
+        private val bluetoothScoThread: HandlerThread by lazy {
+            HandlerThread("AudioSwitchBluetoothSco").apply { start() }
+        }
+
         internal fun newInstance(
             context: Context,
             logger: Logger,

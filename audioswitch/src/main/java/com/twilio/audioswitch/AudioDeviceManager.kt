@@ -9,6 +9,9 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.AudioManager.OnAudioFocusChangeListener
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
 import androidx.annotation.RequiresApi
 import com.twilio.audioswitch.android.BuildWrapper
 import com.twilio.audioswitch.android.Logger
@@ -89,11 +92,15 @@ internal class AudioDeviceManager(
     }
 
     fun enableBluetoothSco(enable: Boolean) {
-        audioManager.run { if (enable) startBluetoothSco() else stopBluetoothSco() }
+        runRoutingTask {
+            audioManager.run { if (enable) startBluetoothSco() else stopBluetoothSco() }
+        }
     }
 
     fun enableSpeakerphone(enable: Boolean) {
-        audioManager.isSpeakerphoneOn = enable
+        runRoutingTask {
+            audioManager.isSpeakerphoneOn = enable
+        }
     }
 
     fun mute(mute: Boolean) {
@@ -119,5 +126,20 @@ internal class AudioDeviceManager(
             @Suppress("DEPRECATION")
             audioManager.abandonAudioFocus(audioFocusChangeListener)
         }
+    }
+
+    private fun runRoutingTask(task: () -> Unit) {
+        if (Looper.myLooper() == routingThread.looper) {
+            task()
+        } else {
+            routingHandler.post { task() }
+        }
+    }
+
+    private companion object {
+        val routingThread: HandlerThread by lazy {
+            HandlerThread("AudioSwitchRouting").apply { start() }
+        }
+        val routingHandler: Handler by lazy { Handler(routingThread.looper) }
     }
 }

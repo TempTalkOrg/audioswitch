@@ -1,6 +1,6 @@
 buildscript {
-    ext.kotlin_version = '1.4.21'
-    ext.dokka_version = '1.4.32'
+    ext.kotlin_version = '1.9.24'
+    ext.dokka_version = '1.9.20'
 
     /**
      * Properties and environment variables needed to publish.
@@ -57,7 +57,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:7.0.3'
+        classpath 'com.android.tools.build:gradle:8.5.2'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
         classpath "org.jetbrains.dokka:dokka-gradle-plugin:$dokka_version"
     }
@@ -96,18 +96,20 @@ allprojects {
     }
 }
 
-nexusPublishing {
-    repositories {
-        sonatype {
-            username = ossrhUsername
-            password = ossrhPassword
-            stagingProfileId = sonatypeStagingProfileId
-            useStaging = !isPreRelease
+if (ossrhUsername && ossrhPassword) {
+    nexusPublishing {
+        repositories {
+            sonatype {
+                username = ossrhUsername
+                password = ossrhPassword
+                stagingProfileId = sonatypeStagingProfileId
+                useStaging = !isPreRelease
+            }
         }
-    }
 
-    clientTimeout = Duration.ofSeconds(300)
-    connectTimeout = Duration.ofSeconds(60)
+        clientTimeout = Duration.ofSeconds(300)
+        connectTimeout = Duration.ofSeconds(60)
+    }
 }
 
 /*
