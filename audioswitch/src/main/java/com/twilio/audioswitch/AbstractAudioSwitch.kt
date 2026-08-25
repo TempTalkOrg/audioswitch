@@ -221,9 +221,35 @@ abstract class AbstractAudioSwitch
         }
         val wasAdded = this.availableUniqueAudioDevices.add(audioDevice)
         if (audioDevice is WiredHeadset) {
-            this.availableUniqueAudioDevices.removeAll { it is Earpiece }
+            val wasRemoved = this.availableUniqueAudioDevices.removeAll { it is Earpiece }
+            //If the user had selected the ear piece and if its removed, we need to reset the value
+            if (wasRemoved && userSelectedAudioDevice is Earpiece) {
+                userSelectedAudioDevice = null
+            }
         }
         this.selectAudioDevice(wasListChanged = wasAdded)
+    }
+
+    override fun onDeviceDisconnected(audioDevice: AudioDevice) {
+        this.logger.d(TAG_AUDIO_SWITCH, "onDeviceDisconnected($audioDevice)")
+        var wasChanged = this.availableUniqueAudioDevices.remove(audioDevice)
+        if (this.userSelectedAudioDevice == audioDevice) {
+            this.userSelectedAudioDevice = null
+        }
+
+        // The set holds a single entry per device kind, so removing the disconnected device also
+        // drops a sibling that is still connected, such as a second bluetooth headset.
+        if (wasChanged) {
+            this.deviceScanner.findActiveDevice(audioDevice)?.let { stillConnected ->
+                this.availableUniqueAudioDevices.add(stillConnected)
+                wasChanged = stillConnected != audioDevice
+            }
+        }
+
+        if (audioDevice is WiredHeadset && this.audioDeviceManager.hasEarpiece()) {
+            wasChanged = this.availableUniqueAudioDevices.add(Earpiece()) || wasChanged
+        }
+        this.selectAudioDevice(wasChanged)
     }
 
     /**
@@ -359,7 +385,11 @@ abstract class AbstractAudioSwitch
 
     private fun getBestDevice(): AudioDevice? {
         val userSelectedAudioDevice = userSelectedAudioDevice
-        return if (userSelectedAudioDevice != null && this.deviceScanner.isDeviceActive(userSelectedAudioDevice)) {
+        //Ensure user selected audio device exists in available list of devices
+        return if (userSelectedAudioDevice != null 
+                    && this.availableUniqueAudioDevices.contains(userSelectedAudioDevice) 
+                    && this.deviceScanner.isDeviceActive(userSelectedAudioDevice)
+        ) {
             userSelectedAudioDevice
         } else {
             this.availableUniqueAudioDevices.firstOrNull {

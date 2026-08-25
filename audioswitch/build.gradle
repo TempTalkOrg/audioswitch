@@ -34,6 +34,9 @@ android {
 
     testOptions {
         execution 'ANDROIDX_TEST_ORCHESTRATOR'
+        // Looper/Handler are only used to pick the thread work runs on; letting the android.jar stubs
+        // return defaults makes the tests' mock handlers take over instead of throwing.
+        unitTests.returnDefaultValues = true
     }
 
     buildTypes {
@@ -55,10 +58,23 @@ android {
     }
 }
 
+// Java tests that call Kotlin `internal` members rely on JVM-mangled names (e.g. getContext$audioswitch_debug).
+// Pin the module name so those names stay stable across Kotlin/AGP defaults.
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach { task ->
+    if (task.name.contains("UnitTest")) {
+        task.kotlinOptions.freeCompilerArgs += ["-module-name", "audioswitch_debug"]
+    }
+}
+
 dependencies {
     implementation "androidx.annotation:annotation:1.3.0"
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'com.nhaarman.mockitokotlin2:mockito-kotlin:2.2.0'
+    // mockito-kotlin 2.2.0 pulls mockito-core 2.23/byte-buddy 1.9, whose ClassReader cannot read
+    // JDK 17's java.lang.Object (class major 61), so the inline mock maker fails on every mock.
+    testImplementation 'org.mockito:mockito-core:3.12.4'
+    testImplementation 'net.bytebuddy:byte-buddy:1.14.19'
+    testImplementation 'net.bytebuddy:byte-buddy-agent:1.14.19'
     testImplementation 'pl.pragmatists:JUnitParams:1.1.1'
     def androidXTest = '1.4.1-alpha03'
     androidTestUtil "androidx.test:orchestrator:$androidXTest"
