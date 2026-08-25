@@ -3,6 +3,8 @@ package com.twilio.audioswitch
 import android.bluetooth.BluetoothAdapter
 import android.content.Context
 import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import androidx.annotation.VisibleForTesting
 import com.twilio.audioswitch.AudioDevice.BluetoothHeadset
 import com.twilio.audioswitch.AudioDevice.Earpiece
@@ -45,15 +47,23 @@ class LegacyAudioSwitch : AbstractAudioSwitch {
      * device list will be:
      * [Speakerphone], [BluetoothHeadset], [WiredHeadset], [Earpiece].
      * An [IllegalArgumentException] is thrown if the [preferredDeviceList] contains duplicate [AudioDevice] elements.
+     * - [handler] - The thread that runs the bluetooth SCO jobs. Since this class is not threadsafe,
+     * pass the same thread the instance is accessed from. Defaults to the main thread, which makes
+     * those jobs block it.
      */
     @JvmOverloads
     constructor(
         context: Context,
         loggingEnabled: Boolean = false,
         audioFocusChangeListener: AudioManager.OnAudioFocusChangeListener = AudioManager.OnAudioFocusChangeListener {},
-        preferredDeviceList: List<Class<out AudioDevice>> = defaultPreferredDeviceList
+        preferredDeviceList: List<Class<out AudioDevice>> = defaultPreferredDeviceList,
+        handler: Handler = Handler(Looper.getMainLooper())
     ) : this(
-        context, audioFocusChangeListener, ProductionLogger(loggingEnabled), preferredDeviceList
+        context = context,
+        audioFocusChangeListener = audioFocusChangeListener,
+        logger = ProductionLogger(loggingEnabled),
+        preferredDeviceList = preferredDeviceList,
+        handler = handler
     )
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
@@ -70,11 +80,13 @@ class LegacyAudioSwitch : AbstractAudioSwitch {
             audioFocusChangeListener = audioFocusChangeListener
         ),
         wiredHeadsetReceiver: WiredHeadsetReceiver = WiredHeadsetReceiver(context, logger),
+        handler: Handler = Handler(Looper.getMainLooper()),
         headsetManager: BluetoothHeadsetManager? = BluetoothHeadsetManager.newInstance(
             context,
             logger,
             BluetoothAdapter.getDefaultAdapter(),
-            audioDeviceManager
+            audioDeviceManager,
+            handler
         ),
         scanner: Scanner = LegacyAudioDeviceScanner(
             audioManager,

@@ -45,7 +45,7 @@ internal fun <T : AudioDevice> setupAudioDeviceScannerMock(vararg allow: T) =
 internal fun setupScoHandlerMock() =
     mock<Handler> {
         whenever(mock.post(any())).thenAnswer {
-            (it.arguments[0] as BluetoothScoJob.BluetoothScoRunnable).run()
+            (it.arguments[0] as Runnable).run()
             true
         }
     }

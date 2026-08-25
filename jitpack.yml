@@ -1,4 +1,6 @@
 jdk:
   - openjdk17
 install:
-  - ./gradlew :audioswitch:publishToMavenLocal
+  - ./gradlew clean
+  - ./gradlew -xtest -xlint assemble
+  - ./gradlew -xtest -xlint publishToMavenLocal

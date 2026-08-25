@@ -17,31 +17,33 @@ internal class AudioDeviceScanner(
     private val audioManager: AudioManager,
     private val handler: Handler,
 ) : AudioDeviceCallback(), Scanner {
+    // Written by whichever thread calls start()/stop(), read on the handler thread.
+    @Volatile
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     internal var listener: Scanner.Listener? = null
-    private val deviceTypes = Collections.synchronizedSet(mutableSetOf<Int>())
+    private val activeDevices = Collections.synchronizedSet(mutableSetOf<AudioDevice>())
     private val refreshHandler: Handler =
         if (handler.looper == Looper.getMainLooper()) backgroundRefreshHandler else handler
 
     override fun isDeviceActive(audioDevice: AudioDevice): Boolean =
-        when (audioDevice) {
-            is AudioDevice.BluetoothHeadset -> hasBluetoothDevice()
-            is AudioDevice.WiredHeadset -> hasWiredDevice()
-            is AudioDevice.Earpiece -> hasEarpieceDevice()
-            is AudioDevice.Speakerphone -> hasSpeakerphoneDevice()
+        this.findActiveDevice(audioDevice) != null
+
+    override fun findActiveDevice(audioDevice: AudioDevice): AudioDevice? =
+        synchronized(this.activeDevices) {
+            this.activeDevices.firstOrNull { it.isSameKindAs(audioDevice) }
         }
 
     override fun start(listener: Scanner.Listener): Boolean {
         this.listener = listener
         this.audioManager.registerAudioDeviceCallback(this, this.handler)
-        this.refreshHandler.post { refreshDeviceTypes() }
+        this.refreshHandler.post { refreshActiveDevices() }
         return true
     }
 
     override fun stop(): Boolean {
         this.audioManager.unregisterAudioDeviceCallback(this)
         this.listener = null
-        this.deviceTypes.clear()
+        this.activeDevices.clear()
         return true
     }
 
@@ -49,7 +51,7 @@ internal class AudioDeviceScanner(
         super.onAudioDevicesAdded(addedDevices)
         val connectedDevices = addedDevices?.mapNotNull { it.audioDevice }?.toSet() ?: emptySet()
         this.refreshHandler.post {
-            refreshDeviceTypes()
+            refreshActiveDevices()
             this.handler.post {
                 connectedDevices.forEach {
                     this.listener?.onDeviceConnected(it)
@@ -62,7 +64,7 @@ internal class AudioDeviceScanner(
         super.onAudioDevicesRemoved(removedDevices)
         val disconnectedDevices = removedDevices?.mapNotNull { it.audioDevice }?.toSet() ?: emptySet()
         this.refreshHandler.post {
-            refreshDeviceTypes()
+            refreshActiveDevices()
             this.handler.post {
                 disconnectedDevices.forEach {
                     this.listener?.onDeviceDisconnected(it)
@@ -71,41 +73,24 @@ internal class AudioDeviceScanner(
         }
     }
 
-    private fun refreshDeviceTypes() {
-        val types = this.audioManager
+    private fun refreshActiveDevices() {
+        val devices = this.audioManager
             .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            .map { it.type }
-            .toSet()
-        synchronized(this.deviceTypes) {
-            this.deviceTypes.clear()
-            this.deviceTypes.addAll(types)
+            .mapNotNull { it.audioDevice }
+        synchronized(this.activeDevices) {
+            this.activeDevices.clear()
+            this.activeDevices.addAll(devices)
         }
     }
 
-    private fun hasType(type: Int): Boolean = synchronized(this.deviceTypes) {
-        this.deviceTypes.contains(type)
-    }
-
-    private fun hasBluetoothDevice(): Boolean {
-        if (hasType(AudioDeviceInfo.TYPE_BLUETOOTH_SCO)) {
-            return true
-        }
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            hasType(AudioDeviceInfo.TYPE_BLE_HEADSET)
-    }
-
-    private fun hasWiredDevice(): Boolean {
-        val hasWired = hasType(AudioDeviceInfo.TYPE_WIRED_HEADSET) || hasType(AudioDeviceInfo.TYPE_WIRED_HEADPHONES)
-        if (hasWired) {
-            return true
-        }
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && hasType(AudioDeviceInfo.TYPE_USB_HEADSET)
-    }
-
-    private fun hasEarpieceDevice(): Boolean = hasType(AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)
-
-    private fun hasSpeakerphoneDevice(): Boolean = hasType(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
-
+    /**
+     * Routing here goes through [AudioManager.startBluetoothSco], so only bluetooth endpoints that
+     * carry HFP may be reported: A2DP and LE Audio speakers would show up as selectable and then
+     * silently fail to route.
+     *
+     * Deliberately narrower than [toTwilioAudioDevice], which describes what
+     * [AudioManager.setCommunicationDevice] accepts. Do not merge the two.
+     */
     val AudioDeviceInfo.audioDevice: AudioDevice?
         get() = if (this.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
             AudioDevice.BluetoothHeadset(this.productName.toString())
@@ -119,26 +104,6 @@ internal class AudioDeviceScanner(
             AudioDevice.Speakerphone()
         } else {
             null
-        }
-
-    fun AudioDeviceInfo.isAudioDevice(audioDevice: AudioDevice): Boolean =
-        when (audioDevice) {
-            is AudioDevice.BluetoothHeadset ->
-                if (this.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
-                    true
-                } else {
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && this.type == AudioDeviceInfo.TYPE_BLE_HEADSET
-                }
-            is AudioDevice.Earpiece ->
-                this.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
-            is AudioDevice.Speakerphone ->
-                this.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-            is AudioDevice.WiredHeadset ->
-                if (this.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || this.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES) {
-                    true
-                } else {
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && this.type == AudioDeviceInfo.TYPE_USB_HEADSET
-                }
         }
 
     private companion object {

@@ -43,15 +43,23 @@ class AudioSwitch : AbstractAudioSwitch {
      * device list will be:
      * [Speakerphone], [BluetoothHeadset], [WiredHeadset], [Earpiece].
      * An [IllegalArgumentException] is thrown if the [preferredDeviceList] contains duplicate [AudioDevice] elements.
+     * - [handler] - The thread that receives system audio device callbacks and performs routing.
+     * Since this class is not threadsafe, pass the same thread the instance is accessed from. Defaults
+     * to the main thread, which makes routing calls block it.
      */
     @JvmOverloads
     constructor(
         context: Context,
         loggingEnabled: Boolean = false,
         audioFocusChangeListener: AudioManager.OnAudioFocusChangeListener = AudioManager.OnAudioFocusChangeListener {},
-        preferredDeviceList: List<Class<out AudioDevice>> = defaultPreferredDeviceList
+        preferredDeviceList: List<Class<out AudioDevice>> = defaultPreferredDeviceList,
+        handler: Handler = Handler(Looper.getMainLooper())
     ) : this(
-        context, audioFocusChangeListener, ProductionLogger(loggingEnabled), preferredDeviceList
+        context = context,
+        audioFocusChangeListener = audioFocusChangeListener,
+        logger = ProductionLogger(loggingEnabled),
+        preferredDeviceList = preferredDeviceList,
+        handler = handler
     )
 
     /**
@@ -93,19 +101,6 @@ class AudioSwitch : AbstractAudioSwitch {
         preferredDeviceList = preferredDeviceList,
         audioDeviceManager = audioDeviceManager,
     )
-
-    override fun onDeviceDisconnected(audioDevice: AudioDevice) {
-        this.logger.d(TAG_AUDIO_SWITCH, "onDeviceDisconnected($audioDevice)")
-        var wasChanged = this.availableUniqueAudioDevices.remove(audioDevice)
-        if (this.userSelectedAudioDevice == audioDevice) {
-            this.userSelectedAudioDevice = null
-        }
-
-        if (audioDevice is WiredHeadset && this.audioDeviceManager.hasEarpiece()) {
-            wasChanged = this.availableUniqueAudioDevices.add(Earpiece()) || wasChanged
-        }
-        this.selectAudioDevice(wasChanged)
-    }
 
     override fun onActivate(audioDevice: AudioDevice) {
         this.logger.d(TAG_AUDIO_SWITCH, "onActivate($audioDevice)")
